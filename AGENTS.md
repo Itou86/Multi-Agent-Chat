@@ -15,14 +15,9 @@
 ## 快速启动
 
 ```bash
-# 方式一：双击 start.bat（Windows 一键启动）
-
-# 方式二：手动启动
+# 手动启动
 python server.py
 # 浏览器访问 http://localhost:8088
-
-# 方式三：Debug 模式（显示完整服务器日志）
-debug_start.bat
 ```
 
 ## 文件结构
@@ -31,10 +26,6 @@ debug_start.bat
 .
 ├── server.py              # FastAPI 后端
 ├── index.html             # 前端应用
-├── start.bat              # 一键启动（自动安装依赖 + 开浏览器）
-├── debug_start.bat        # Debug 启动（服务器日志可见）
-├── stop.bat               # 停止服务
-├── _launcher.py           # 启动器（被 start.bat 调用）
 ├── test_agent.py          # 测试工作流 Agent
 ├── tests/
 │   ├── conftest.py

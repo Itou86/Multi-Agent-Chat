@@ -14,7 +14,7 @@
 - [x] 引入 FastAPI 后端 `server.py`
 - [x] 前端 UI 支持 Session（对话文件）管理
 - [x] 后端自动端口切换（默认 8088）
-- [x] **一键启动脚本**：`start.bat`、`debug_start.bat`、`stop.bat`
+- [x] **本地启动脚本**（已从仓库移除，保留在本地使用）
 - [x] file:// 协议检测提示（防止直接双击打开）
 - [x] 测试工作流 Agent (`test_agent.py`)
 - [x] 后端单元测试 28 个用例全部通过
