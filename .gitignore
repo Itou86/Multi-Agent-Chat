@@ -20,3 +20,10 @@ data/
 # OS
 .DS_Store
 Thumbs.db
+
+# Local launch scripts
+_launcher.py
+start.bat
+debug_start.bat
+restart.bat
+stop.bat
