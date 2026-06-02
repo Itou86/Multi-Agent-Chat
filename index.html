@@ -1,0 +1,1803 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Multi-Agent Chat</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/github-dark.min.css">
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
+  <style>
+    .scrollbar-hide::-webkit-scrollbar { display: none; }
+    .scrollbar-hide { -ms-overflow-style: none; scrollbar-width: none; }
+    pre code.hljs { border-radius: 0.5rem; padding: 1rem; font-size: 0.875rem; }
+    .session-item.active { background-color: #111827; color: white; }
+    .session-item.active .session-time { color: #9ca3af; }
+    .layer-card { transition: all 0.2s; }
+    .layer-card:hover { box-shadow: 0 4px 12px rgba(0,0,0,0.08); }
+    .collapsed-branches {
+      max-height: 0;
+      opacity: 0;
+      overflow: hidden;
+      transition: all 0.35s ease;
+    }
+    .collapsed-branches.expanded {
+      max-height: 2000px;
+      opacity: 1;
+    }
+  </style>
+</head>
+<body class="bg-gray-50 h-screen flex overflow-hidden text-gray-800">
+
+  <!-- 左侧边栏 -->
+  <aside class="w-64 bg-white border-r flex flex-col flex-shrink-0">
+    <!-- Agents 区域 -->
+    <div class="p-4 border-b flex items-center justify-between">
+      <h1 class="font-bold text-lg flex items-center gap-2">
+        <span class="w-2 h-2 rounded-full bg-green-500"></span>
+        Agents
+      </h1>
+    </div>
+    <div id="agentList" class="flex-1 overflow-y-auto p-2 space-y-1 min-h-0">
+      <!-- Agent items -->
+    </div>
+    <div class="p-3 border-t">
+      <button onclick="addAgent()" class="w-full py-2 px-3 bg-gray-900 text-white rounded-lg hover:bg-gray-800 transition text-sm font-medium">
+        + 新建 Agent
+      </button>
+    </div>
+
+    <!-- Pipelines 区域 -->
+    <div class="border-t bg-indigo-50 flex flex-col" style="max-height: 35%;">
+      <div class="px-4 py-3 border-b flex items-center justify-between">
+        <h3 class="text-xs font-bold text-indigo-700 uppercase tracking-wider">Pipelines</h3>
+        <button onclick="addPipeline()" class="text-xs px-2 py-1 bg-white border border-indigo-200 rounded hover:bg-indigo-100 transition">+ 新建</button>
+      </div>
+      <div id="pipelineList" class="flex-1 overflow-y-auto p-2 space-y-1">
+        <!-- Pipeline items -->
+      </div>
+    </div>
+
+    <!-- Sessions 区域 -->
+    <div class="border-t bg-gray-50 flex flex-col" style="max-height: 35%;">
+      <div class="px-4 py-3 border-b flex items-center justify-between">
+        <h3 id="sessionHeader" class="text-xs font-bold text-gray-500 uppercase tracking-wider">对话</h3>
+        <button onclick="addSession()" class="text-xs px-2 py-1 bg-white border rounded hover:bg-gray-100 transition">+ 新建</button>
+      </div>
+      <div id="sessionList" class="flex-1 overflow-y-auto p-2 space-y-1">
+        <!-- Session items -->
+      </div>
+    </div>
+  </aside>
+
+  <!-- 主区域 -->
+  <main class="flex-1 flex flex-col min-w-0">
+    <!-- 顶部配置栏 -->
+    <header class="bg-white border-b px-6 py-3 flex items-center justify-between">
+      <div class="flex items-center gap-3 flex-1 min-w-0">
+        <h2 id="currentModeName" class="font-semibold truncate">加载中...</h2>
+        <span class="text-gray-300">/</span>
+        <span id="currentSessionTitle" class="text-sm text-gray-500 truncate">选择对话</span>
+        <span id="modeBadge" class="hidden text-xs px-2 py-0.5 bg-gray-100 rounded"></span>
+        <span id="modelBadge" class="text-xs px-2 py-0.5 bg-gray-100 rounded hidden"></span>
+      </div>
+      <div class="flex items-center gap-2">
+        <button onclick="summarizeAndExport()" id="exportBtn" class="hidden p-2 hover:bg-green-50 text-green-600 rounded-lg transition text-xs" title="一键总结并导出为 Obsidian Markdown">📥 总结导出</button>
+        <button onclick="toggleLayerPrompts()" id="layerPromptBtn" class="hidden p-2 hover:bg-indigo-50 text-indigo-600 rounded-lg transition text-xs" title="编辑层提示词">层提示词</button>
+        <button onclick="deleteCurrentSession()" id="delSessionBtn" class="hidden p-2 hover:bg-red-50 text-red-500 rounded-lg transition text-xs" title="删除当前对话">删除对话</button>
+        <button onclick="toggleSettings()" class="p-2 hover:bg-gray-100 rounded-lg transition" title="API 设置">
+          <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"/><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/></svg>
+        </button>
+      </div>
+    </header>
+
+    <!-- 层提示词编辑面板 -->
+    <div id="layerPromptPanel" class="hidden bg-indigo-50 border-b px-6 py-4">
+      <div class="flex items-center justify-between mb-3">
+        <h4 class="font-medium text-sm">会话级层提示词覆盖</h4>
+        <div class="flex gap-2">
+          <button onclick="resetLayerPrompts()" class="px-3 py-1 text-xs border rounded hover:bg-white">恢复默认</button>
+          <button onclick="saveLayerPrompts()" class="px-3 py-1 text-xs bg-indigo-600 text-white rounded hover:bg-indigo-700">保存</button>
+          <button onclick="toggleLayerPrompts()" class="px-3 py-1 text-xs text-gray-500 hover:bg-white rounded">关闭</button>
+        </div>
+      </div>
+      <div id="layerPromptEditor" class="space-y-2 max-h-60 overflow-y-auto"></div>
+      <p class="text-xs text-gray-400 mt-2">优先级：会话覆盖 > Pipeline默认 > Agent自身prompt</p>
+    </div>
+
+    <!-- 设置面板 -->
+    <div id="settingsPanel" class="hidden bg-white border-b px-6 py-4 space-y-3">
+      <div class="grid grid-cols-1 md:grid-cols-4 gap-4">
+        <div>
+          <label class="block text-xs font-medium text-gray-500 mb-1">API 提供商</label>
+          <select id="apiPreset" onchange="applyPreset()" class="w-full px-3 py-2 border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-gray-900 bg-white">
+            <option value="custom">自定义</option>
+            <option value="openai">OpenAI</option>
+            <option value="kimi">Kimi (Moonshot)</option>
+            <option value="deepseek">DeepSeek</option>
+            <option value="siliconflow">硅基流动</option>
+            <option value="azure">Azure OpenAI</option>
+            <option value="baichuan">Baichuan</option>
+          </select>
+        </div>
+        <div>
+          <label class="block text-xs font-medium text-gray-500 mb-1">API 地址</label>
+          <input id="apiUrl" type="text" placeholder="https://api.openai.com/v1/chat/completions"
+            class="w-full px-3 py-2 border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-gray-900">
+        </div>
+        <div>
+          <label class="block text-xs font-medium text-gray-500 mb-1">API Key</label>
+          <input id="apiKey" type="password" placeholder="sk-..."
+            class="w-full px-3 py-2 border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-gray-900">
+        </div>
+        <div>
+          <label class="block text-xs font-medium text-gray-500 mb-1">模型</label>
+          <input id="model" type="text" placeholder="gpt-4o"
+            class="w-full px-3 py-2 border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-gray-900">
+        </div>
+      </div>
+      <div class="flex items-center gap-3">
+        <label class="flex items-center gap-2 text-sm cursor-pointer">
+          <input id="streamToggle" type="checkbox" checked class="rounded">
+          流式输出
+        </label>
+        <button onclick="saveSettings()" class="ml-auto px-4 py-1.5 bg-gray-900 text-white rounded-lg text-sm hover:bg-gray-800">保存设置</button>
+      </div>
+    </div>
+
+    <!-- 对话区域 -->
+    <div id="chatContainer" class="flex-1 overflow-y-auto px-4 md:px-20 py-6 space-y-6">
+      <div id="emptyState" class="h-full flex flex-col items-center justify-center text-gray-400">
+        <svg class="w-16 h-16 mb-4 opacity-30" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z"/></svg>
+        <p>选择一个 Agent 或 Pipeline 开始对话</p>
+      </div>
+    </div>
+
+    <!-- 输入区 -->
+    <div class="bg-white border-t px-4 md:px-20 py-4">
+      <div class="relative max-w-3xl mx-auto">
+        <textarea id="userInput" rows="1"
+          class="w-full pr-14 pl-4 py-3 bg-gray-100 rounded-xl resize-none focus:outline-none focus:ring-2 focus:ring-gray-900 focus:bg-white transition"
+          placeholder="输入消息... (Shift+Enter 换行)"
+          onkeydown="handleKeyDown(event)"
+          oninput="autoResize(this)"></textarea>
+        <button onclick="sendMessage()" id="sendBtn"
+          class="absolute right-2 bottom-2 p-2 bg-gray-900 text-white rounded-lg hover:bg-gray-800 disabled:opacity-50 transition">
+          <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 12h14M12 5l7 7-7 7"/></svg>
+        </button>
+      </div>
+      <p class="text-center text-xs text-gray-400 mt-2">API 请求直接从浏览器发出，请确保服务端允许 CORS</p>
+    </div>
+  </main>
+
+  <!-- Agent 编辑弹窗 -->
+  <div id="agentModal" class="hidden fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+    <div class="bg-white rounded-xl p-6 w-full max-w-md mx-4 shadow-2xl">
+      <h3 id="modalTitle" class="font-bold text-lg mb-4">编辑 Agent</h3>
+      <div class="space-y-4">
+        <div>
+          <label class="block text-sm font-medium mb-1">名称</label>
+          <input id="editName" type="text" class="w-full px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-gray-900">
+        </div>
+        <div>
+          <label class="block text-sm font-medium mb-1">系统提示词 (System Prompt)</label>
+          <textarea id="editPrompt" rows="4" class="w-full px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-gray-900 resize-none"></textarea>
+        </div>
+        <div class="flex justify-end gap-2 pt-2">
+          <button onclick="closeModal()" class="px-4 py-2 text-gray-600 hover:bg-gray-100 rounded-lg">取消</button>
+          <button onclick="saveAgent()" class="px-4 py-2 bg-gray-900 text-white rounded-lg hover:bg-gray-800">保存</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Pipeline 编辑弹窗 -->
+  <div id="pipelineModal" class="hidden fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+    <div class="bg-white rounded-xl p-6 w-full max-w-lg mx-4 shadow-2xl max-h-[90vh] flex flex-col">
+      <h3 id="pipelineModalTitle" class="font-bold text-lg mb-4">编辑 Pipeline</h3>
+      <div class="space-y-4 flex-1 overflow-y-auto">
+        <div>
+          <label class="block text-sm font-medium mb-1">名称</label>
+          <input id="editPipelineName" type="text" class="w-full px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-600">
+        </div>
+        <div>
+          <div class="flex items-center justify-between mb-2">
+            <label class="block text-sm font-medium">层配置</label>
+            <button onclick="addPipelineLayer()" class="text-xs px-2 py-1 bg-indigo-50 text-indigo-600 border border-indigo-200 rounded hover:bg-indigo-100">+ 添加层</button>
+          </div>
+          <div id="pipelineLayers" class="space-y-2"></div>
+        </div>
+      </div>
+      <div class="flex justify-end gap-2 pt-4 border-t mt-4">
+        <button onclick="closePipelineModal()" class="px-4 py-2 text-gray-600 hover:bg-gray-100 rounded-lg">取消</button>
+        <button onclick="savePipeline()" class="px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700">保存</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- 导出预览弹窗 -->
+  <div id="exportModal" class="hidden fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+    <div class="bg-white rounded-xl p-6 w-full max-w-2xl mx-4 shadow-2xl max-h-[92vh] flex flex-col">
+      <h3 class="font-bold text-lg mb-4 flex items-center gap-2">
+        <span>📥</span> 导出预览
+      </h3>
+
+      <!-- Loading -->
+      <div id="exportLoading" class="hidden flex flex-col items-center justify-center py-12">
+        <div class="w-8 h-8 border-2 border-indigo-600 border-t-transparent rounded-full animate-spin mb-3"></div>
+        <p class="text-sm text-gray-500">正在生成 AI 总结...</p>
+      </div>
+
+      <!-- Content -->
+      <div id="exportContent" class="space-y-4 flex-1 overflow-y-auto hidden">
+        <div>
+          <label class="block text-sm font-medium mb-1">总结内容</label>
+          <textarea id="exportSummary" rows="6" class="w-full px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-600 resize-none text-sm leading-relaxed"></textarea>
+        </div>
+
+        <div class="grid grid-cols-2 gap-3">
+          <div>
+            <label class="block text-sm font-medium mb-1">创建时间</label>
+            <input id="exportCreated" type="date" class="w-full px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-600 text-sm">
+          </div>
+          <div>
+            <label class="block text-sm font-medium mb-1">更新时间</label>
+            <input id="exportUpdated" type="date" class="w-full px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-600 text-sm">
+          </div>
+        </div>
+
+        <div>
+          <label class="block text-sm font-medium mb-1">Tags（用逗号分隔）</label>
+          <input id="exportTags" type="text" class="w-full px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-600 text-sm" placeholder="tag1, tag2, tag3">
+        </div>
+
+        <div>
+          <label class="block text-sm font-medium mb-1">保存文件名</label>
+          <input id="exportFilename" type="text" class="w-full px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-600 text-sm">
+        </div>
+
+        <div>
+          <label class="block text-sm font-medium mb-1">原始对话路径</label>
+          <textarea id="exportPathText" rows="4" class="w-full px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-600 resize-none text-sm bg-gray-50" readonly></textarea>
+        </div>
+      </div>
+
+      <div class="flex justify-end gap-2 pt-4 border-t mt-4">
+        <button onclick="closeExportModal()" class="px-4 py-2 text-gray-600 hover:bg-gray-100 rounded-lg">取消</button>
+        <button onclick="confirmExport()" class="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700">确认导出</button>
+      </div>
+    </div>
+  </div>
+
+<script>
+// ========== HTTP 工具 ==========
+async function fetchJSON(url) {
+  const res = await fetch(url);
+  if (!res.ok) throw new Error(`HTTP ${res.status}`);
+  return res.json();
+}
+async function postJSON(url, body) {
+  const res = await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+  if (!res.ok) throw new Error(`HTTP ${res.status}`);
+  return res.json();
+}
+async function putJSON(url, body) {
+  const res = await fetch(url, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+  if (!res.ok) throw new Error(`HTTP ${res.status}`);
+  return res.json();
+}
+async function delJSON(url) {
+  const res = await fetch(url, { method: 'DELETE' });
+  if (!res.ok) throw new Error(`HTTP ${res.status}`);
+  return res.json();
+}
+
+// ========== 状态管理 ==========
+let agents = [];
+let pipelines = [];
+let sessions = [];
+let currentAgentId = null;
+let currentPipelineId = null;
+let currentSessionId = null;
+let settings = {};
+let editingAgentId = null;
+let editingPipelineId = null;
+let abortController = null;
+const expandedTreeLayers = new Set(); // key: "sessionId:layerIndex"
+let exportData = null; // 存储导出预览时的临时数据
+
+// API 提供商预设
+const API_PRESETS = {
+  openai:     { url: 'https://api.openai.com/v1/chat/completions', model: 'gpt-4o' },
+  kimi:       { url: 'https://api.moonshot.cn/v1/chat/completions', model: 'moonshot-v1-8k' },
+  deepseek:   { url: 'https://api.deepseek.com/v1/chat/completions', model: 'deepseek-chat' },
+  siliconflow:{ url: 'https://api.siliconflow.cn/v1/chat/completions', model: 'deepseek-ai/DeepSeek-V3' },
+  azure:      { url: 'https://{your-resource}.openai.azure.com/openai/deployments/{deployment}/chat/completions?api-version=2024-02-01', model: 'gpt-4o' },
+  baichuan:   { url: 'https://api.baichuan-ai.com/v1/chat/completions', model: 'Baichuan4' }
+};
+
+// ========== 初始化 ==========
+async function init() {
+  // 检测是否通过 file:// 协议直接打开
+  if (window.location.protocol === 'file:') {
+    document.getElementById('chatContainer').innerHTML = `
+      <div class="h-full flex flex-col items-center justify-center text-gray-500 px-8">
+        <svg class="w-16 h-16 mb-4 text-red-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"/></svg>
+        <p class="font-medium mb-2">请通过服务器访问此页面</p>
+        <p class="text-sm text-center max-w-md">直接双击打开 index.html 无法连接后端 API。<br>请先运行 <code class="bg-gray-100 px-1 rounded">python server.py</code>，然后在浏览器访问 <code class="bg-gray-100 px-1 rounded">http://localhost:8088</code><br>或双击 <code class="bg-gray-100 px-1 rounded">start.bat</code> 一键启动。</p>
+      </div>`;
+    document.getElementById('emptyState').style.display = 'none';
+    return;
+  }
+  try {
+    agents = await fetchJSON('/api/agents');
+    pipelines = await fetchJSON('/api/pipelines');
+    settings = await fetchJSON('/api/settings');
+    loadSettingsUI();
+    if (agents.length > 0) {
+      currentAgentId = agents[0].id;
+      await loadSessionsForAgent(currentAgentId);
+      if (sessions.length > 0) currentSessionId = sessions[0].id;
+    }
+    renderAgentList();
+    renderPipelineList();
+    renderSessionList();
+    renderChat();
+    updateHeader();
+  } catch (e) {
+    alert('连接后端失败: ' + e.message);
+  }
+}
+
+async function loadSessionsForAgent(agentId) {
+  sessions = await fetchJSON(`/api/sessions?agentId=${agentId}`);
+}
+async function loadSessionsForPipeline(pipelineId) {
+  sessions = await fetchJSON(`/api/sessions?pipelineId=${pipelineId}`);
+}
+
+// ========== 设置 ==========
+function detectPreset() {
+  const url = (settings.apiUrl || '').toLowerCase();
+  if (!url) return 'custom';
+  for (const [key, preset] of Object.entries(API_PRESETS)) {
+    if (url.includes(preset.url.split('/')[2].toLowerCase())) return key;
+  }
+  return 'custom';
+}
+
+function applyPreset() {
+  const presetKey = document.getElementById('apiPreset').value;
+  if (presetKey === 'custom') return;
+  const preset = API_PRESETS[presetKey];
+  if (!preset) return;
+  document.getElementById('apiUrl').value = preset.url;
+  document.getElementById('model').value = preset.model;
+}
+
+function loadSettingsUI() {
+  document.getElementById('apiUrl').value = settings.apiUrl || '';
+  document.getElementById('apiKey').value = settings.apiKey || '';
+  document.getElementById('model').value = settings.model || '';
+  document.getElementById('streamToggle').checked = settings.stream !== false;
+  document.getElementById('apiPreset').value = detectPreset();
+}
+
+async function saveSettings() {
+  settings = {
+    apiUrl: document.getElementById('apiUrl').value.trim(),
+    apiKey: document.getElementById('apiKey').value.trim(),
+    model: document.getElementById('model').value.trim(),
+    stream: document.getElementById('streamToggle').checked
+  };
+  await postJSON('/api/settings', settings);
+  updateModelBadge();
+  alert('设置已保存');
+}
+
+function toggleSettings() {
+  document.getElementById('settingsPanel').classList.toggle('hidden');
+}
+
+function updateModelBadge() {
+  const badge = document.getElementById('modelBadge');
+  if (settings.model) {
+    badge.textContent = settings.model;
+    badge.classList.remove('hidden');
+  } else {
+    badge.classList.add('hidden');
+  }
+}
+
+function updateHeader() {
+  const agent = agents.find(a => a.id === currentAgentId);
+  const pl = pipelines.find(p => p.id === currentPipelineId);
+  const session = sessions.find(s => s.id === currentSessionId);
+
+  if (pl) {
+    document.getElementById('currentModeName').textContent = pl.name;
+    document.getElementById('modeBadge').textContent = 'Pipeline';
+    document.getElementById('modeBadge').classList.remove('hidden');
+  } else if (agent) {
+    document.getElementById('currentModeName').textContent = agent.name;
+    document.getElementById('modeBadge').textContent = 'Agent';
+    document.getElementById('modeBadge').classList.remove('hidden');
+  } else {
+    document.getElementById('currentModeName').textContent = '未选择';
+    document.getElementById('modeBadge').classList.add('hidden');
+  }
+
+  document.getElementById('currentSessionTitle').textContent = session ? session.title : '选择对话';
+  document.getElementById('sessionHeader').textContent = pl ? `${pl.name} 的对话` : (agent ? `${agent.name} 的对话` : '对话');
+  document.getElementById('delSessionBtn').classList.toggle('hidden', !currentSessionId);
+  document.getElementById('layerPromptBtn').classList.toggle('hidden', !(session && (session.mode === 'pipeline' || session.mode === 'tree')));
+  document.getElementById('exportBtn').classList.toggle('hidden', !(session && session.mode === 'tree'));
+}
+
+// ========== Agent 列表渲染 ==========
+function renderAgentList() {
+  const list = document.getElementById('agentList');
+  list.innerHTML = agents.map(agent => `
+    <div onclick="selectAgent('${agent.id}')"
+      class="group flex items-center justify-between px-3 py-2.5 rounded-lg cursor-pointer transition ${agent.id === currentAgentId && !currentPipelineId ? 'bg-gray-900 text-white' : 'hover:bg-gray-100'}">
+      <div class="flex items-center gap-2 min-w-0">
+        <div class="w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold ${agent.id === currentAgentId && !currentPipelineId ? 'bg-white text-gray-900' : 'bg-gray-200 text-gray-600'}">
+          ${agent.name.charAt(0).toUpperCase()}
+        </div>
+        <span class="text-sm truncate">${escapeHtml(agent.name)}</span>
+      </div>
+      <div class="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition ${agent.id === currentAgentId && !currentPipelineId ? 'opacity-100' : ''}">
+        <button onclick="event.stopPropagation(); editAgent('${agent.id}')" class="p-1 hover:bg-black/10 rounded" title="编辑">
+          <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z"/></svg>
+        </button>
+        ${agents.length > 1 ? `<button onclick="event.stopPropagation(); deleteAgent('${agent.id}')" class="p-1 hover:bg-black/10 rounded" title="删除"><svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/></svg></button>` : ''}
+      </div>
+    </div>
+  `).join('');
+}
+
+async function selectAgent(id) {
+  if (abortController) {
+    abortController.abort();
+    abortController = null;
+  }
+  currentAgentId = id;
+  currentPipelineId = null;
+  currentSessionId = null;
+  await loadSessionsForAgent(id);
+  if (sessions.length > 0) currentSessionId = sessions[0].id;
+  renderAgentList();
+  renderPipelineList();
+  renderSessionList();
+  renderChat();
+  updateHeader();
+}
+
+function addAgent() {
+  editingAgentId = null;
+  document.getElementById('modalTitle').textContent = '新建 Agent';
+  document.getElementById('editName').value = '';
+  document.getElementById('editPrompt').value = 'You are a helpful assistant.';
+  document.getElementById('agentModal').classList.remove('hidden');
+}
+
+function editAgent(id) {
+  const agent = agents.find(a => a.id === id);
+  if (!agent) return;
+  editingAgentId = id;
+  document.getElementById('modalTitle').textContent = '编辑 Agent';
+  document.getElementById('editName').value = agent.name;
+  document.getElementById('editPrompt').value = agent.prompt;
+  document.getElementById('agentModal').classList.remove('hidden');
+}
+
+async function saveAgent() {
+  const name = document.getElementById('editName').value.trim();
+  const prompt = document.getElementById('editPrompt').value.trim();
+  if (!name) return alert('请输入名称');
+
+  if (editingAgentId) {
+    await putJSON(`/api/agents/${editingAgentId}`, { name, prompt });
+    const agent = agents.find(a => a.id === editingAgentId);
+    agent.name = name;
+    agent.prompt = prompt;
+  } else {
+    const agent = await postJSON('/api/agents', { name, prompt });
+    agents.push(agent);
+    currentAgentId = agent.id;
+    currentPipelineId = null;
+    sessions = [];
+    currentSessionId = null;
+  }
+  renderAgentList();
+  renderSessionList();
+  renderChat();
+  updateHeader();
+  closeModal();
+}
+
+async function deleteAgent(id) {
+  if (!confirm('确定删除这个 Agent 吗？其所有单层对话也会一并删除。')) return;
+  await delJSON(`/api/agents/${id}`);
+  agents = agents.filter(a => a.id !== id);
+  if (currentAgentId === id) {
+    currentAgentId = agents[0]?.id || null;
+    currentSessionId = null;
+    if (currentAgentId) await loadSessionsForAgent(currentAgentId);
+    if (sessions.length > 0) currentSessionId = sessions[0].id;
+  }
+  // Refresh pipelines since agent references may have been cleared
+  pipelines = await fetchJSON('/api/pipelines');
+  renderAgentList();
+  renderPipelineList();
+  renderSessionList();
+  renderChat();
+  updateHeader();
+}
+
+function closeModal() {
+  document.getElementById('agentModal').classList.add('hidden');
+}
+
+// ========== Pipeline 列表渲染 ==========
+function renderPipelineList() {
+  const list = document.getElementById('pipelineList');
+  if (pipelines.length === 0) {
+    list.innerHTML = '<p class="text-xs text-gray-400 text-center py-4">暂无 Pipeline</p>';
+    return;
+  }
+  list.innerHTML = pipelines.map(pl => `
+    <div onclick="selectPipeline('${pl.id}')"
+      class="group flex items-center justify-between px-3 py-2 rounded-lg cursor-pointer transition ${pl.id === currentPipelineId ? 'bg-indigo-700 text-white' : 'hover:bg-indigo-100'}">
+      <div class="min-w-0 flex-1">
+        <p class="text-sm truncate font-medium">${escapeHtml(pl.name)}</p>
+        <p class="text-xs opacity-70 mt-0.5">${pl.layers ? pl.layers.length : 0} 层</p>
+      </div>
+      <div class="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition ${pl.id === currentPipelineId ? 'opacity-100' : ''}">
+        <button onclick="event.stopPropagation(); editPipeline('${pl.id}')" class="p-1 hover:bg-black/10 rounded" title="编辑">
+          <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z"/></svg>
+        </button>
+        <button onclick="event.stopPropagation(); deletePipeline('${pl.id}')" class="p-1 hover:bg-black/10 rounded" title="删除"><svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/></svg></button>
+      </div>
+    </div>
+  `).join('');
+}
+
+async function selectPipeline(id) {
+  if (abortController) {
+    abortController.abort();
+    abortController = null;
+  }
+  currentPipelineId = id;
+  currentAgentId = null;
+  currentSessionId = null;
+  await loadSessionsForPipeline(id);
+  if (sessions.length > 0) currentSessionId = sessions[0].id;
+  renderAgentList();
+  renderPipelineList();
+  renderSessionList();
+  renderChat();
+  updateHeader();
+}
+
+function addPipeline() {
+  editingPipelineId = null;
+  document.getElementById('pipelineModalTitle').textContent = '新建 Pipeline';
+  document.getElementById('editPipelineName').value = '';
+  renderPipelineLayers([
+    { agentId: agents[0]?.id || '', label: '信息收集', prompt: '' },
+    { agentId: agents[0]?.id || '', label: '深度分析', prompt: '' },
+    { agentId: agents[0]?.id || '', label: '总结建议', prompt: '' }
+  ]);
+  document.getElementById('pipelineModal').classList.remove('hidden');
+}
+
+function editPipeline(id) {
+  const pl = pipelines.find(p => p.id === id);
+  if (!pl) return;
+  editingPipelineId = id;
+  document.getElementById('pipelineModalTitle').textContent = '编辑 Pipeline';
+  document.getElementById('editPipelineName').value = pl.name;
+  renderPipelineLayers(pl.layers || []);
+  document.getElementById('pipelineModal').classList.remove('hidden');
+}
+
+function renderPipelineLayers(layers) {
+  const container = document.getElementById('pipelineLayers');
+  container.innerHTML = layers.map((layer, idx) => `
+    <div class="border rounded-lg p-3 layer-row" data-index="${idx}">
+      <div class="flex gap-2 mb-2">
+        <input type="text" class="layer-label w-24 px-2 py-1 border rounded text-sm" placeholder="层标签" value="${escapeHtml(layer.label || '')}">
+        <select class="layer-agent flex-1 px-2 py-1 border rounded text-sm bg-white">
+          ${agents.map(a => `<option value="${a.id}" ${a.id === layer.agentId ? 'selected' : ''}>${escapeHtml(a.name)}</option>`).join('')}
+        </select>
+        <div class="flex items-center gap-1">
+          <label class="text-xs text-gray-500 whitespace-nowrap">分支</label>
+          <input type="number" class="layer-branches w-14 px-2 py-1 border rounded text-sm" min="1" max="10" value="${layer.branches || 1}">
+        </div>
+        <button onclick="removePipelineLayer(${idx})" class="px-2 text-red-500 hover:bg-red-50 rounded text-sm" title="删除该层">×</button>
+      </div>
+      <textarea class="layer-prompt w-full px-2 py-1 border rounded text-xs" rows="2" placeholder="默认提示词（留空则使用Agent自身prompt）">${escapeHtml(layer.prompt || '')}</textarea>
+    </div>
+  `).join('');
+}
+
+function addPipelineLayer() {
+  const rows = document.querySelectorAll('#pipelineLayers .layer-row');
+  const layers = [];
+  rows.forEach(row => {
+    layers.push({
+      label: row.querySelector('.layer-label').value,
+      agentId: row.querySelector('.layer-agent').value,
+      prompt: row.querySelector('.layer-prompt').value,
+      branches: parseInt(row.querySelector('.layer-branches').value, 10) || 1
+    });
+  });
+  layers.push({ label: `第${layers.length + 1}层`, agentId: agents[0]?.id || '', prompt: '', branches: 1 });
+  renderPipelineLayers(layers);
+}
+
+function removePipelineLayer(idx) {
+  const rows = document.querySelectorAll('#pipelineLayers .layer-row');
+  if (rows.length <= 1) return alert('至少需要一层');
+  const layers = [];
+  rows.forEach((row, i) => {
+    if (i !== idx) {
+      layers.push({
+        label: row.querySelector('.layer-label').value,
+        agentId: row.querySelector('.layer-agent').value,
+        prompt: row.querySelector('.layer-prompt').value,
+        branches: parseInt(row.querySelector('.layer-branches').value, 10) || 1
+      });
+    }
+  });
+  renderPipelineLayers(layers);
+}
+
+async function savePipeline() {
+  const name = document.getElementById('editPipelineName').value.trim();
+  if (!name) return alert('请输入Pipeline名称');
+
+  const rows = document.querySelectorAll('#pipelineLayers .layer-row');
+  const layers = [];
+  rows.forEach(row => {
+    layers.push({
+      label: row.querySelector('.layer-label').value.trim(),
+      agentId: row.querySelector('.layer-agent').value,
+      prompt: row.querySelector('.layer-prompt').value.trim(),
+      branches: parseInt(row.querySelector('.layer-branches').value, 10) || 1
+    });
+  });
+
+  if (editingPipelineId) {
+    await putJSON(`/api/pipelines/${editingPipelineId}`, { name, layers });
+    const pl = pipelines.find(p => p.id === editingPipelineId);
+    pl.name = name;
+    pl.layers = layers;
+  } else {
+    const pl = await postJSON('/api/pipelines', { name, layers });
+    pipelines.push(pl);
+    currentPipelineId = pl.id;
+    currentAgentId = null;
+    sessions = [];
+    currentSessionId = null;
+  }
+  renderPipelineList();
+  renderSessionList();
+  renderChat();
+  updateHeader();
+  closePipelineModal();
+}
+
+async function deletePipeline(id) {
+  if (!confirm('确定删除这个 Pipeline 吗？其所有对话也会一并删除。')) return;
+  await delJSON(`/api/pipelines/${id}`);
+  pipelines = pipelines.filter(p => p.id !== id);
+  if (currentPipelineId === id) {
+    currentPipelineId = null;
+    currentSessionId = null;
+    sessions = [];
+  }
+  renderPipelineList();
+  renderSessionList();
+  renderChat();
+  updateHeader();
+}
+
+function closePipelineModal() {
+  document.getElementById('pipelineModal').classList.add('hidden');
+}
+
+// ========== Session 列表渲染 ==========
+function renderSessionList() {
+  const list = document.getElementById('sessionList');
+  if (!currentAgentId && !currentPipelineId) {
+    list.innerHTML = '<p class="text-xs text-gray-400 text-center py-4">先选择一个 Agent 或 Pipeline</p>';
+    return;
+  }
+  if (sessions.length === 0) {
+    list.innerHTML = '<p class="text-xs text-gray-400 text-center py-4">暂无对话，点击新建</p>';
+    return;
+  }
+  list.innerHTML = sessions.map(sess => `
+    <div onclick="selectSession('${sess.id}')"
+      class="session-item group flex items-center justify-between px-3 py-2 rounded-lg cursor-pointer transition ${sess.id === currentSessionId ? 'active' : 'hover:bg-white'}">
+      <div class="min-w-0 flex-1">
+        <p class="text-sm truncate font-medium">${escapeHtml(sess.title)}</p>
+        <p class="session-time text-xs text-gray-400 mt-0.5">${formatTime(sess.updatedAt)} · ${sess.mode === 'tree' ? 'Tree' : (sess.mode === 'pipeline' ? 'Pipeline' : 'Agent')}</p>
+      </div>
+      <button onclick="event.stopPropagation(); deleteSession('${sess.id}')" class="p-1 opacity-0 group-hover:opacity-100 hover:bg-black/10 rounded transition ${sess.id === currentSessionId ? 'opacity-100' : ''}">
+        <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/></svg>
+      </button>
+    </div>
+  `).join('');
+}
+
+function selectSession(id) {
+  if (abortController) {
+    abortController.abort();
+    abortController = null;
+  }
+  currentSessionId = id;
+  renderSessionList();
+  renderChat();
+  updateHeader();
+}
+
+async function addSession() {
+  if (!currentAgentId && !currentPipelineId) return alert('请先选择一个 Agent 或 Pipeline');
+  let sess;
+  if (currentPipelineId) {
+    const pl = pipelines.find(p => p.id === currentPipelineId);
+    const isTree = pl && pl.layers && pl.layers.some(l => (l.branches || 1) > 1);
+    sess = await postJSON('/api/sessions', { mode: isTree ? 'tree' : 'pipeline', pipelineId: currentPipelineId, title: '新对话' });
+  } else {
+    sess = await postJSON('/api/sessions', { mode: 'single', agentId: currentAgentId, title: '新对话' });
+  }
+  sessions.unshift(sess);
+  currentSessionId = sess.id;
+  renderSessionList();
+  renderChat();
+  updateHeader();
+}
+
+async function deleteSession(id) {
+  if (!confirm('确定删除这个对话吗？')) return;
+  await delJSON(`/api/sessions/${id}`);
+  sessions = sessions.filter(s => s.id !== id);
+  if (currentSessionId === id) currentSessionId = sessions[0]?.id || null;
+  renderSessionList();
+  renderChat();
+  updateHeader();
+}
+
+async function deleteCurrentSession() {
+  if (!currentSessionId) return;
+  await deleteSession(currentSessionId);
+}
+
+function formatTime(iso) {
+  if (!iso) return '';
+  const d = new Date(iso);
+  const now = new Date();
+  const isToday = d.toDateString() === now.toDateString();
+  if (isToday) return d.toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' });
+  return d.toLocaleDateString('zh-CN', { month: 'short', day: 'numeric' }) + ' ' + d.toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' });
+}
+
+// ========== 层提示词编辑 ==========
+function toggleLayerPrompts() {
+  const panel = document.getElementById('layerPromptPanel');
+  const session = sessions.find(s => s.id === currentSessionId);
+  if (!session || (session.mode !== 'pipeline' && session.mode !== 'tree')) {
+    alert('请先选择一个 Pipeline 或 Tree 对话');
+    return;
+  }
+  panel.classList.toggle('hidden');
+  if (!panel.classList.contains('hidden')) {
+    renderLayerPromptEditor(session);
+  }
+}
+
+function renderLayerPromptEditor(session) {
+  const container = document.getElementById('layerPromptEditor');
+  container.innerHTML = session.layers.map((layer, idx) => {
+    const agent = agents.find(a => a.id === layer.agentId);
+    const effective = layer.sessionPrompt || layer.defaultPrompt || (agent ? agent.prompt : '');
+    return `
+      <div class="border rounded-lg p-3 bg-white">
+        <div class="flex items-center gap-2 mb-1">
+          <span class="text-xs font-bold px-2 py-0.5 bg-indigo-100 text-indigo-700 rounded">${escapeHtml(layer.label)}</span>
+          <span class="text-xs text-gray-400">Agent: ${agent ? escapeHtml(agent.name) : '无'}</span>
+          ${layer.sessionPrompt ? '<span class="text-xs text-amber-600 font-medium">[已覆盖]</span>' : '<span class="text-xs text-green-600">[使用默认]</span>'}
+        </div>
+        <div class="text-xs text-gray-500 mb-1">当前生效: ${escapeHtml(effective.substring(0, 60))}${effective.length > 60 ? '...' : ''}</div>
+        <textarea id="sessionPrompt-${idx}" rows="2" class="w-full px-2 py-1 border rounded text-xs focus:outline-none focus:ring-1 focus:ring-indigo-500" placeholder="输入会话级覆盖提示词，留空则使用默认">${escapeHtml(layer.sessionPrompt || '')}</textarea>
+      </div>
+    `;
+  }).join('');
+}
+
+async function saveLayerPrompts() {
+  const session = sessions.find(s => s.id === currentSessionId);
+  session.layers.forEach((layer, idx) => {
+    const ta = document.getElementById(`sessionPrompt-${idx}`);
+    if (ta) layer.sessionPrompt = ta.value.trim();
+  });
+  await putJSON(`/api/sessions/${currentSessionId}`, { layers: session.layers });
+  toggleLayerPrompts();
+  renderChat();
+}
+
+async function resetLayerPrompts() {
+  const session = sessions.find(s => s.id === currentSessionId);
+  session.layers.forEach(layer => layer.sessionPrompt = '');
+  await putJSON(`/api/sessions/${currentSessionId}`, { layers: session.layers });
+  renderLayerPromptEditor(session);
+  renderChat();
+}
+
+// ========== 对话渲染 ==========
+function renderChat() {
+  const container = document.getElementById('chatContainer');
+  const emptyState = document.getElementById('emptyState');
+  const session = sessions.find(s => s.id === currentSessionId);
+
+  if (!session) {
+    if (emptyState) emptyState.style.display = 'flex';
+    if (container) {
+      container.innerHTML = `<div id="emptyState" class="h-full flex flex-col items-center justify-center text-gray-400"><svg class="w-16 h-16 mb-4 opacity-30" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z"/></svg><p>选择一个 Agent 或 Pipeline 开始对话</p></div>`;
+    }
+    return;
+  }
+
+  if (emptyState) emptyState.style.display = 'none';
+
+  if (session.mode === 'tree') {
+    renderTreeChat(session, container);
+  } else if (session.mode === 'pipeline') {
+    renderPipelineChat(session, container);
+  } else {
+    renderSingleChat(session, container);
+  }
+}
+
+function renderSingleChat(session, container) {
+  const agent = agents.find(a => a.id === session.agentId);
+  if (!session.messages || session.messages.length === 0) {
+    container.innerHTML = `
+      <div class="text-center text-gray-400 mt-20">
+        <div class="w-12 h-12 rounded-full bg-gray-200 mx-auto mb-3 flex items-center justify-center text-lg font-bold text-gray-500">${agent ? agent.name.charAt(0).toUpperCase() : '?'}</div>
+        <p class="text-sm">${agent ? escapeHtml(agent.name) : 'Agent'} 已就绪</p>
+        <p class="text-xs mt-1 opacity-60">${agent ? escapeHtml(agent.prompt.substring(0, 60)) + (agent.prompt.length > 60 ? '...' : '') : ''}</p>
+      </div>`;
+    return;
+  }
+
+  container.innerHTML = session.messages.map((msg, idx) => `
+    <div class="flex gap-4 ${msg.role === 'user' ? 'flex-row-reverse' : ''}">
+      <div class="w-8 h-8 rounded-full flex-shrink-0 flex items-center justify-center text-xs font-bold ${msg.role === 'user' ? 'bg-gray-900 text-white' : 'bg-gray-200 text-gray-600'}">
+        ${msg.role === 'user' ? '我' : (agent ? agent.name.charAt(0).toUpperCase() : 'A')}
+      </div>
+      <div class="max-w-[80%] ${msg.role === 'user' ? 'bg-gray-900 text-white' : 'bg-white border'} rounded-2xl px-5 py-3 text-sm leading-relaxed shadow-sm">
+        <div class="markdown-body">${msg.role === 'assistant' ? marked.parse(msg.content) : escapeHtml(msg.content).replace(/\n/g, '<br>')}</div>
+        ${msg.role === 'assistant' ? `<div class="mt-2 flex gap-2 opacity-0 hover:opacity-100 transition"><button onclick="copyMessage(${idx})" class="text-xs text-gray-400 hover:text-gray-600">复制</button><button onclick="regenerate(${idx})" class="text-xs text-gray-400 hover:text-gray-600">重新生成</button></div>` : ''}
+      </div>
+    </div>
+  `).join('');
+
+  requestAnimationFrame(() => {
+    container.scrollTop = container.scrollHeight;
+    document.querySelectorAll('pre code').forEach(block => hljs.highlightElement(block));
+  });
+}
+
+function renderPipelineChat(session, container) {
+  let html = '';
+
+  // 用户消息
+  if (session.messages && session.messages.length > 0) {
+    session.messages.forEach(msg => {
+      if (msg.role === 'user') {
+        html += `
+          <div class="flex gap-4 flex-row-reverse mb-4">
+            <div class="w-8 h-8 rounded-full flex-shrink-0 flex items-center justify-center text-xs font-bold bg-gray-900 text-white">我</div>
+            <div class="max-w-[80%] bg-gray-900 text-white rounded-2xl px-5 py-3 text-sm leading-relaxed shadow-sm">
+              ${escapeHtml(msg.content).replace(/\n/g, '<br>')}
+            </div>
+          </div>`;
+      }
+    });
+  }
+
+  // 各层卡片
+  if (session.layers) {
+    session.layers.forEach((layer, idx) => {
+      const agent = agents.find(a => a.id === layer.agentId);
+      const agentName = agent ? agent.name : '未知Agent';
+      const hasResponse = layer.response && layer.response.length > 0;
+      const isCustom = !!layer.sessionPrompt;
+      html += `
+        <div class="layer-card bg-white border rounded-xl p-4 shadow-sm">
+          <div class="flex items-center gap-2 mb-2">
+            <span class="text-xs font-bold px-2 py-0.5 bg-indigo-100 text-indigo-700 rounded">${escapeHtml(layer.label)}</span>
+            <span class="text-xs text-gray-500">· ${escapeHtml(agentName)}</span>
+            ${isCustom ? '<span class="text-xs text-amber-600 font-medium" title="使用了会话级提示词覆盖">[会话覆盖]</span>' : (layer.defaultPrompt ? '<span class="text-xs text-green-600">[默认]</span>' : '<span class="text-xs text-gray-400">[Agent提示词]</span>')}
+          </div>
+          <div class="markdown-body text-sm leading-relaxed">
+            ${hasResponse ? marked.parse(layer.response) : '<span class="text-gray-300 italic">等待生成...</span>'}
+          </div>
+        </div>
+      `;
+    });
+  }
+
+  container.innerHTML = html;
+  requestAnimationFrame(() => {
+    container.scrollTop = container.scrollHeight;
+    document.querySelectorAll('pre code').forEach(block => hljs.highlightElement(block));
+  });
+}
+
+function escapeHtml(text) {
+  const div = document.createElement('div');
+  div.textContent = text;
+  return div.innerHTML;
+}
+
+function copyMessage(idx) {
+  const session = sessions.find(s => s.id === currentSessionId);
+  if (session && session.messages) navigator.clipboard.writeText(session.messages[idx].content);
+}
+
+async function regenerate(idx) {
+  const session = sessions.find(s => s.id === currentSessionId);
+  session.messages = session.messages.slice(0, idx);
+  await putJSON(`/api/sessions/${currentSessionId}`, { messages: session.messages });
+  renderChat();
+  await sendToAPI();
+}
+
+// ========== 发送消息 ==========
+function autoResize(el) {
+  el.style.height = 'auto';
+  el.style.height = Math.min(el.scrollHeight, 200) + 'px';
+}
+
+function handleKeyDown(e) {
+  if (e.key === 'Enter' && !e.shiftKey) {
+    e.preventDefault();
+    sendMessage();
+  }
+}
+
+async function sendMessage() {
+  const input = document.getElementById('userInput');
+  const text = input.value.trim();
+  if (!text) return;
+
+  if (!currentSessionId) {
+    await addSession();
+  }
+
+  const session = sessions.find(s => s.id === currentSessionId);
+  if (!session) return;
+
+  if (!settings.apiUrl || !settings.apiKey || !settings.model) {
+    toggleSettings();
+    return alert('请先配置 API 地址、Key 和模型');
+  }
+
+  if (session.mode === 'tree') {
+    // 如果正在生成，先中止
+    if (abortController) {
+      abortController.abort();
+      abortController = null;
+    }
+    session.messages.push({ role: 'user', content: text });
+    // 清空所有层的 responses 和选择状态
+    if (session.layers) {
+      session.layers.forEach(layer => {
+        if (layer.responses) {
+          layer.responses.forEach(r => r.content = '');
+        }
+        layer.selectedResponseId = null;
+      });
+    }
+    input.value = '';
+    input.style.height = 'auto';
+    await putJSON(`/api/sessions/${currentSessionId}`, { messages: session.messages, layers: session.layers, title: text.slice(0, 20) });
+    session.title = text.slice(0, 20);
+    renderSessionList();
+    renderChat();
+    await sendTree();
+  } else if (session.mode === 'pipeline') {
+    session.messages.push({ role: 'user', content: text });
+    input.value = '';
+    input.style.height = 'auto';
+    await putJSON(`/api/sessions/${currentSessionId}`, { messages: session.messages, layers: session.layers, title: text.slice(0, 20) });
+    session.title = text.slice(0, 20);
+    renderSessionList();
+    renderChat();
+    if (session.layers && session.layers.length > 0) {
+      await sendPipeline();
+    }
+  } else {
+    session.messages.push({ role: 'user', content: text });
+    input.value = '';
+    input.style.height = 'auto';
+    await putJSON(`/api/sessions/${currentSessionId}`, { messages: session.messages });
+    renderChat();
+    await sendToAPI();
+  }
+}
+
+// ========== 单层 API 调用 ==========
+async function sendToAPI() {
+  const targetSessionId = currentSessionId;
+  const session = sessions.find(s => s.id === targetSessionId);
+  const agent = agents.find(a => a.id === session.agentId);
+  const sendBtn = document.getElementById('sendBtn');
+  sendBtn.disabled = true;
+
+  const systemMsg = { role: 'system', content: agent.prompt };
+  const apiMessages = [systemMsg, ...session.messages];
+
+  const assistantMsg = { role: 'assistant', content: '' };
+  session.messages.push(assistantMsg);
+  await putJSON(`/api/sessions/${targetSessionId}`, { messages: session.messages });
+  if (currentSessionId !== targetSessionId) { sendBtn.disabled = false; abortController = null; return; }
+  renderChat();
+
+  try {
+    abortController = new AbortController();
+    const res = await fetch(settings.apiUrl, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': 'Bearer ' + settings.apiKey
+      },
+      body: JSON.stringify({
+        model: settings.model,
+        messages: apiMessages,
+        stream: settings.stream
+      }),
+      signal: abortController.signal
+    });
+
+    if (!res.ok) {
+      let errText = '';
+      try { errText = await res.text(); } catch (e) { errText = '无法读取错误响应'; }
+      throw new Error(`HTTP ${res.status}: ${errText}`);
+    }
+
+    if (settings.stream) {
+      const reader = res.body.getReader();
+      const decoder = new TextDecoder();
+      let buffer = '';
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        buffer += decoder.decode(value, { stream: true });
+
+        const lines = buffer.split('\n');
+        buffer = lines.pop();
+
+        for (const line of lines) {
+          const trimmed = line.trim();
+          if (!trimmed || trimmed === 'data: [DONE]') continue;
+          if (trimmed.startsWith('data: ')) {
+            try {
+              const data = JSON.parse(trimmed.slice(6));
+              if (data.error) throw new Error(data.error.message || JSON.stringify(data.error));
+              const delta = data.choices?.[0]?.delta?.content || '';
+              if (delta) {
+                assistantMsg.content += delta;
+                if (currentSessionId !== targetSessionId) continue;
+                updateLastMessage(assistantMsg.content);
+              }
+            } catch (e) {
+              if (e instanceof Error && e.message && !e.message.includes('Unexpected token')) throw e;
+            }
+          }
+        }
+      }
+      // 流结束后若仍为空，可能是 API 返回了非标准格式或配置有误
+      if (!assistantMsg.content.trim()) {
+        assistantMsg.content = '[未收到有效响应，请检查 API 地址、Key、模型是否正确，或该提供商是否支持流式输出]';
+        if (currentSessionId === targetSessionId) renderChat();
+      }
+    } else {
+      const data = await res.json();
+      assistantMsg.content = data.choices?.[0]?.message?.content || '';
+      if (!assistantMsg.content.trim()) {
+        assistantMsg.content = '[未收到有效响应，请检查 API 地址、Key、模型是否正确]';
+      }
+      if (currentSessionId === targetSessionId) renderChat();
+    }
+
+    await putJSON(`/api/sessions/${targetSessionId}`, { messages: session.messages });
+  } catch (err) {
+    if (err.name === 'AbortError') {
+      assistantMsg.content += '\n\n[已停止]';
+    } else {
+      assistantMsg.content += '\n\n[错误: ' + err.message + ']';
+    }
+    await putJSON(`/api/sessions/${targetSessionId}`, { messages: session.messages });
+    if (currentSessionId === targetSessionId) renderChat();
+  } finally {
+    sendBtn.disabled = false;
+    abortController = null;
+  }
+}
+
+function updateLastMessage(content) {
+  const container = document.getElementById('chatContainer');
+  const blocks = container.querySelectorAll('.markdown-body');
+  if (blocks.length > 0) {
+    const last = blocks[blocks.length - 1];
+    last.innerHTML = marked.parse(content);
+    requestAnimationFrame(() => {
+      document.querySelectorAll('pre code').forEach(block => hljs.highlightElement(block));
+      container.scrollTop = container.scrollHeight;
+    });
+  }
+}
+
+// ========== Pipeline 多层串行调用 ==========
+async function sendPipeline() {
+  const targetSessionId = currentSessionId;
+  const session = sessions.find(s => s.id === targetSessionId);
+  const sendBtn = document.getElementById('sendBtn');
+  sendBtn.disabled = true;
+
+  const lastUserMsg = session.messages.slice().reverse().find(m => m.role === 'user');
+  const userQuestion = lastUserMsg ? lastUserMsg.content : '';
+
+  for (let i = 0; i < session.layers.length; i++) {
+    const layer = session.layers[i];
+    const agent = agents.find(a => a.id === layer.agentId);
+
+    // 构建 system prompt（优先级：sessionPrompt > defaultPrompt > agent.prompt）
+    const systemPrompt = layer.sessionPrompt || layer.defaultPrompt || (agent ? agent.prompt : '');
+
+    // 构建 messages
+    const apiMessages = [
+      { role: 'system', content: systemPrompt },
+      { role: 'user', content: userQuestion }
+    ];
+    for (let j = 0; j < i; j++) {
+      apiMessages.push({ role: 'assistant', content: session.layers[j].response });
+    }
+
+    layer.response = '';
+    await putJSON(`/api/sessions/${targetSessionId}`, { layers: session.layers });
+    if (currentSessionId !== targetSessionId) { sendBtn.disabled = false; abortController = null; return; }
+    renderChat();
+
+    try {
+      abortController = new AbortController();
+      const res = await fetch(settings.apiUrl, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': 'Bearer ' + settings.apiKey
+        },
+        body: JSON.stringify({
+          model: settings.model,
+          messages: apiMessages,
+          stream: settings.stream
+        }),
+        signal: abortController.signal
+      });
+
+      if (!res.ok) {
+        let errText = '';
+        try { errText = await res.text(); } catch (e) { errText = '无法读取错误响应'; }
+        throw new Error(`HTTP ${res.status}: ${errText}`);
+      }
+
+      if (settings.stream) {
+        const reader = res.body.getReader();
+        const decoder = new TextDecoder();
+        let buffer = '';
+
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          buffer += decoder.decode(value, { stream: true });
+
+          const lines = buffer.split('\n');
+          buffer = lines.pop();
+
+          for (const line of lines) {
+            const trimmed = line.trim();
+            if (!trimmed || trimmed === 'data: [DONE]') continue;
+            if (trimmed.startsWith('data: ')) {
+              try {
+                const data = JSON.parse(trimmed.slice(6));
+                if (data.error) throw new Error(data.error.message || JSON.stringify(data.error));
+                const delta = data.choices?.[0]?.delta?.content || '';
+                if (delta) {
+                  layer.response += delta;
+                  if (currentSessionId !== targetSessionId) continue;
+                  updateLayerResponse(i, layer.response);
+                }
+              } catch (e) {
+                if (e instanceof Error && e.message && !e.message.includes('Unexpected token')) throw e;
+              }
+            }
+          }
+        }
+        if (!layer.response.trim()) {
+          layer.response = '[未收到有效响应，请检查 API 地址、Key、模型是否正确，或该提供商是否支持流式输出]';
+          if (currentSessionId === targetSessionId) renderChat();
+        }
+      } else {
+        const data = await res.json();
+        layer.response = data.choices?.[0]?.message?.content || '';
+        if (!layer.response.trim()) {
+          layer.response = '[未收到有效响应，请检查 API 地址、Key、模型是否正确]';
+        }
+        if (currentSessionId === targetSessionId) renderChat();
+      }
+
+      await putJSON(`/api/sessions/${targetSessionId}`, { layers: session.layers });
+    } catch (err) {
+      if (err.name === 'AbortError') {
+        layer.response += '\n\n[已停止]';
+      } else {
+        layer.response += '\n\n[错误: ' + err.message + ']';
+      }
+      await putJSON(`/api/sessions/${targetSessionId}`, { layers: session.layers });
+      if (currentSessionId === targetSessionId) renderChat();
+      break;
+    }
+  }
+
+  sendBtn.disabled = false;
+  abortController = null;
+}
+
+function updateLayerResponse(layerIndex, content) {
+  const container = document.getElementById('chatContainer');
+  const cards = container.querySelectorAll('.layer-card');
+  if (cards[layerIndex]) {
+    const body = cards[layerIndex].querySelector('.markdown-body');
+    if (body) {
+      body.innerHTML = marked.parse(content);
+      requestAnimationFrame(() => {
+        document.querySelectorAll('pre code').forEach(block => hljs.highlightElement(block));
+        container.scrollTop = container.scrollHeight;
+      });
+    }
+  }
+}
+
+// ========== Tree 模式渲染 ==========
+function renderTreeChat(session, container) {
+  let html = '';
+
+  // 用户消息
+  if (session.messages && session.messages.length > 0) {
+    session.messages.forEach(msg => {
+      if (msg.role === 'user') {
+        html += `
+          <div class="flex gap-4 flex-row-reverse mb-4">
+            <div class="w-8 h-8 rounded-full flex-shrink-0 flex items-center justify-center text-xs font-bold bg-gray-900 text-white">我</div>
+            <div class="max-w-[80%] bg-gray-900 text-white rounded-2xl px-5 py-3 text-sm leading-relaxed shadow-sm">
+              ${escapeHtml(msg.content).replace(/\n/g, '<br>')}
+            </div>
+          </div>`;
+      }
+    });
+  }
+
+  // 每层区域
+  if (session.layers) {
+    session.layers.forEach((layer, layerIdx) => {
+      const hasResponses = layer.responses && layer.responses.some(r => r.content);
+      const isDone = !!layer.selectedResponseId;
+      const isCurrent = hasResponses && !isDone;
+      const isFuture = !hasResponses && !isDone;
+
+      html += `<div class="mb-6">`;
+      html += `
+        <div class="flex items-center gap-2 mb-3">
+          <span class="text-xs font-bold px-2 py-0.5 bg-indigo-100 text-indigo-700 rounded">${escapeHtml(layer.label)}</span>
+          <span class="text-xs text-gray-400">${layer.branches} 个分支</span>
+          ${isDone ? '<span class="text-xs text-green-600 font-medium">[已选择]</span>' : (isCurrent ? '<span class="text-xs text-amber-600 font-medium">[待选择]</span>' : '')}
+        </div>`;
+
+      if (layer.responses) {
+        if (isDone) {
+          // 已选择：只展开选中的分支，其他分支折叠，点击展开/收起
+          const selectedResp = layer.responses.find(r => r.id === layer.selectedResponseId);
+          const otherResponses = layer.responses.filter(r => r.id !== layer.selectedResponseId);
+          html += `<div class="tree-layer-group">`;
+          html += `<div class="grid grid-cols-1 gap-3">`;
+          if (selectedResp) {
+            const selIdx = layer.responses.findIndex(r => r.id === layer.selectedResponseId);
+            const hasContent = selectedResp.content && selectedResp.content.length > 0;
+            html += `
+              <div onclick="handleSelectedCardClick('${session.id}', ${layerIdx}, event)" class="layer-card branch-card rounded-xl p-4 shadow-sm border border-indigo-500 ring-1 ring-indigo-500 bg-indigo-50 cursor-pointer hover:shadow-md transition" data-layer-index="${layerIdx}" data-branch-index="${selIdx}">
+                <div class="flex items-center justify-between mb-2">
+                  <span class="text-xs font-medium px-2 py-0.5 bg-gray-100 text-gray-600 rounded">分支 ${selIdx + 1}</span>
+                  <span class="text-xs font-bold text-indigo-600">已选中</span>
+                </div>
+                <div class="markdown-body text-sm leading-relaxed min-h-[3rem]">
+                  ${hasContent ? marked.parse(selectedResp.content) : '<span class="text-gray-300 italic">等待生成...</span>'}
+                </div>
+                <button disabled class="mt-3 w-full py-1.5 text-xs bg-indigo-100 text-indigo-400 rounded cursor-default">已选择</button>
+              </div>
+            `;
+          }
+          html += `</div>`;
+          if (otherResponses.length > 0) {
+            const collapseKey = `${session.id}:${layerIdx}`;
+            const isExpanded = expandedTreeLayers.has(collapseKey);
+            const arrowRotate = isExpanded ? 'rotate-180' : '';
+            html += `
+              <div id="toggle-bar-${session.id}-${layerIdx}" onclick="toggleCollapsedBranches('${session.id}', ${layerIdx})" class="mt-1 text-xs text-gray-400 px-1 flex items-center gap-1 cursor-pointer hover:text-indigo-500 transition select-none">
+                <svg class="w-3 h-3 transition-transform duration-300 ${arrowRotate}" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/></svg>
+                <span>${isExpanded ? '点击收起其他分支' : `已收起 ${otherResponses.length} 个其他分支（点击展开）`}</span>
+              </div>
+              <div id="collapsed-${session.id}-${layerIdx}" class="collapsed-branches${isExpanded ? ' expanded' : ''}">
+                <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3 mt-2">
+            `;
+            otherResponses.forEach((resp) => {
+              const otherIdx = layer.responses.findIndex(r => r.id === resp.id);
+              const hasContent = resp.content && resp.content.length > 0;
+              html += `
+                <div class="layer-card branch-card rounded-xl p-4 shadow-sm border bg-gray-50 opacity-70" data-layer-index="${layerIdx}" data-branch-index="${otherIdx}">
+                  <div class="flex items-center justify-between mb-2">
+                    <span class="text-xs font-medium px-2 py-0.5 bg-gray-200 text-gray-500 rounded">分支 ${otherIdx + 1}</span>
+                    <span class="text-xs text-gray-400">未选中</span>
+                  </div>
+                  <div class="markdown-body text-sm leading-relaxed min-h-[3rem] text-gray-500">
+                    ${hasContent ? marked.parse(resp.content) : '<span class="text-gray-300 italic">无内容</span>'}
+                  </div>
+                </div>
+              `;
+            });
+            html += `</div></div>`;
+          }
+          html += `</div>`;
+        } else {
+          // 未选择：全部正常渲染
+          html += `<div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">`;
+          layer.responses.forEach((resp, branchIdx) => {
+            const isSelected = layer.selectedResponseId === resp.id;
+            const hasContent = resp.content && resp.content.length > 0;
+            const cardClass = isSelected
+              ? 'border-indigo-500 ring-1 ring-indigo-500 bg-indigo-50'
+              : 'border hover:shadow-sm bg-white';
+            const clickHandler = hasContent && !isSelected ? `onclick="selectBranch(${layerIdx}, '${resp.id}')" style="cursor:pointer;"` : '';
+            html += `
+              <div class="layer-card branch-card rounded-xl p-4 shadow-sm border ${cardClass}" data-layer-index="${layerIdx}" data-branch-index="${branchIdx}" ${clickHandler}>
+                <div class="flex items-center justify-between mb-2">
+                  <span class="text-xs font-medium px-2 py-0.5 bg-gray-100 text-gray-600 rounded">分支 ${branchIdx + 1}</span>
+                  ${isSelected ? '<span class="text-xs font-bold text-indigo-600">已选中</span>' : ''}
+                </div>
+                <div class="markdown-body text-sm leading-relaxed min-h-[3rem]">
+                  ${hasContent ? marked.parse(resp.content) : '<span class="text-gray-300 italic">等待生成...</span>'}
+                </div>
+                ${hasContent && !isSelected ? `<button onclick="event.stopPropagation(); selectBranch(${layerIdx}, '${resp.id}')" class="mt-3 w-full py-1.5 text-xs bg-indigo-600 text-white rounded hover:bg-indigo-700 transition">选择此回答</button>` : ''}
+                ${hasContent && isSelected ? `<button disabled class="mt-3 w-full py-1.5 text-xs bg-indigo-100 text-indigo-400 rounded cursor-default">已选择</button>` : ''}
+              </div>
+            `;
+          });
+          html += `</div>`;
+        }
+      }
+
+      html += `</div>`;
+    });
+  }
+
+  container.innerHTML = html;
+  requestAnimationFrame(() => {
+    container.scrollTop = container.scrollHeight;
+    document.querySelectorAll('pre code').forEach(block => hljs.highlightElement(block));
+  });
+}
+
+function updateTreeBranch(layerIndex, branchIndex, content) {
+  const container = document.getElementById('chatContainer');
+  const card = container.querySelector(`[data-layer-index="${layerIndex}"][data-branch-index="${branchIndex}"]`);
+  if (card) {
+    const body = card.querySelector('.markdown-body');
+    if (body) {
+      body.innerHTML = marked.parse(content);
+      requestAnimationFrame(() => {
+        document.querySelectorAll('pre code').forEach(block => hljs.highlightElement(block));
+      });
+    }
+  }
+}
+
+function toggleCollapsedBranches(sessionId, layerIdx) {
+  const key = `${sessionId}:${layerIdx}`;
+  const el = document.getElementById(`collapsed-${sessionId}-${layerIdx}`);
+  const bar = document.getElementById(`toggle-bar-${sessionId}-${layerIdx}`);
+  const isExpanded = expandedTreeLayers.has(key);
+  if (isExpanded) {
+    expandedTreeLayers.delete(key);
+    if (el) el.classList.remove('expanded');
+  } else {
+    expandedTreeLayers.add(key);
+    if (el) el.classList.add('expanded');
+  }
+  // 更新提示条文字和箭头
+  if (bar) {
+    const svg = bar.querySelector('svg');
+    const span = bar.querySelector('span');
+    const otherCount = el ? el.querySelectorAll('.branch-card').length : 0;
+    if (expandedTreeLayers.has(key)) {
+      if (svg) svg.classList.add('rotate-180');
+      if (span) span.textContent = '点击收起其他分支';
+    } else {
+      if (svg) svg.classList.remove('rotate-180');
+      if (span) span.textContent = `已收起 ${otherCount} 个其他分支（点击展开）`;
+    }
+  }
+}
+
+function handleSelectedCardClick(sessionId, layerIdx, event) {
+  // 点击链接时不 toggle
+  if (event.target.closest('a')) return;
+  // 选中文字时不 toggle
+  const selection = window.getSelection();
+  if (selection && selection.toString().trim().length > 0) return;
+  toggleCollapsedBranches(sessionId, layerIdx);
+}
+
+async function selectBranch(layerIndex, responseId) {
+  const session = sessions.find(s => s.id === currentSessionId);
+  if (!session) return;
+  const layer = session.layers[layerIndex];
+  const oldSelected = layer.selectedResponseId;
+  if (oldSelected === responseId) return;
+
+  layer.selectedResponseId = responseId;
+
+  // 清空后续层
+  for (let k = layerIndex + 1; k < session.layers.length; k++) {
+    const nextLayer = session.layers[k];
+    if (nextLayer.responses) {
+      nextLayer.responses.forEach(r => r.content = '');
+    }
+    nextLayer.selectedResponseId = null;
+  }
+
+  await putJSON(`/api/sessions/${currentSessionId}`, { layers: session.layers });
+  renderChat();
+
+  // 自动触发下一层
+  if (layerIndex + 1 < session.layers.length) {
+    const nextLayer = session.layers[layerIndex + 1];
+    const hasContent = nextLayer.responses && nextLayer.responses.some(r => r.content);
+    if (!hasContent) {
+      await generateLayerBranches(layerIndex + 1);
+    }
+  }
+}
+
+// ========== Tree 模式 API 调用 ==========
+async function sendTree() {
+  const session = sessions.find(s => s.id === currentSessionId);
+  if (!session || !session.layers || session.layers.length === 0) return;
+
+  // 找到第一个需要生成的层
+  let targetLayerIndex = -1;
+  for (let i = 0; i < session.layers.length; i++) {
+    const layer = session.layers[i];
+    if (layer.responses && !layer.responses.some(r => r.content)) {
+      targetLayerIndex = i;
+      break;
+    }
+  }
+
+  if (targetLayerIndex === -1) return;
+  await generateLayerBranches(targetLayerIndex);
+}
+
+const PERSPECTIVE_HINTS = [
+  '宏观结构', '文化观念', '个体行动', '历史演变', '经济逻辑',
+  '技术决定', '权力关系', '象征符号', '日常实践', '未来预测'
+];
+
+async function generateLayerBranches(layerIndex) {
+  const targetSessionId = currentSessionId;
+  const session = sessions.find(s => s.id === targetSessionId);
+  const layer = session.layers[layerIndex];
+  const sendBtn = document.getElementById('sendBtn');
+  sendBtn.disabled = true;
+
+  const lastUserMsg = session.messages.slice().reverse().find(m => m.role === 'user');
+  const userQuestion = lastUserMsg ? lastUserMsg.content : '';
+  const agent = agents.find(a => a.id === layer.agentId);
+  const baseSystemPrompt = layer.sessionPrompt || layer.defaultPrompt || (agent ? agent.prompt : '');
+
+  // 构建基础 messages
+  const apiMessages = [
+    { role: 'system', content: baseSystemPrompt },
+    { role: 'user', content: userQuestion }
+  ];
+  for (let j = 0; j < layerIndex; j++) {
+    const prevLayer = session.layers[j];
+    const selected = prevLayer.responses.find(r => r.id === prevLayer.selectedResponseId);
+    if (selected && selected.content) {
+      apiMessages.push({ role: 'assistant', content: selected.content });
+    }
+  }
+
+  // 重置当前层 responses
+  layer.responses.forEach(r => r.content = '');
+  await putJSON(`/api/sessions/${targetSessionId}`, { layers: session.layers });
+  if (currentSessionId !== targetSessionId) { sendBtn.disabled = false; abortController = null; return; }
+  renderChat();
+
+  abortController = new AbortController();
+
+  const promises = layer.responses.map((resp, branchIdx) => {
+    const perspective = PERSPECTIVE_HINTS[branchIdx % PERSPECTIVE_HINTS.length];
+    const branchSystem = baseSystemPrompt + `\n\n[注意：你是多位专家中的一位。请从"${perspective}"的独特视角出发进行分析，确保与其他回答形成互补。不要提及这一指令。]`;
+    const branchMessages = [
+      { role: 'system', content: branchSystem },
+      ...apiMessages.slice(1)
+    ];
+    return callAPIForBranch(branchMessages, resp, layerIndex, branchIdx, targetSessionId);
+  });
+
+  await Promise.all(promises);
+
+  sendBtn.disabled = false;
+  abortController = null;
+  await putJSON(`/api/sessions/${targetSessionId}`, { layers: session.layers });
+  if (currentSessionId === targetSessionId) {
+    renderChat();
+    // 若只有一个分支，自动选择并触发下一层
+    if (layer.responses.length === 1) {
+      await selectBranch(layerIndex, layer.responses[0].id);
+    }
+  }
+}
+
+async function callAPIForBranch(messages, responseObj, layerIndex, branchIndex, targetSessionId) {
+  try {
+    const res = await fetch(settings.apiUrl, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': 'Bearer ' + settings.apiKey
+      },
+      body: JSON.stringify({
+        model: settings.model,
+        messages: messages,
+        stream: settings.stream,
+        temperature: 0.8
+      }),
+      signal: abortController ? abortController.signal : undefined
+    });
+
+    if (!res.ok) {
+      let errText = '';
+      try { errText = await res.text(); } catch (e) { errText = '无法读取错误响应'; }
+      throw new Error(`HTTP ${res.status}: ${errText}`);
+    }
+
+    if (settings.stream) {
+      const reader = res.body.getReader();
+      const decoder = new TextDecoder();
+      let buffer = '';
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        buffer += decoder.decode(value, { stream: true });
+
+        const lines = buffer.split('\n');
+        buffer = lines.pop();
+
+        for (const line of lines) {
+          const trimmed = line.trim();
+          if (!trimmed || trimmed === 'data: [DONE]') continue;
+          if (trimmed.startsWith('data: ')) {
+            try {
+              const data = JSON.parse(trimmed.slice(6));
+              if (data.error) throw new Error(data.error.message || JSON.stringify(data.error));
+              const delta = data.choices?.[0]?.delta?.content || '';
+              if (delta) {
+                responseObj.content += delta;
+                if (currentSessionId !== targetSessionId) continue;
+                updateTreeBranch(layerIndex, branchIndex, responseObj.content);
+              }
+            } catch (e) {
+              if (e instanceof Error && e.message && !e.message.includes('Unexpected token')) throw e;
+            }
+          }
+        }
+      }
+      if (!responseObj.content.trim()) {
+        responseObj.content = '[未收到有效响应，请检查 API 地址、Key、模型是否正确，或该提供商是否支持流式输出]';
+        if (currentSessionId === targetSessionId) updateTreeBranch(layerIndex, branchIndex, responseObj.content);
+      }
+    } else {
+      const data = await res.json();
+      responseObj.content = data.choices?.[0]?.message?.content || '';
+      if (!responseObj.content.trim()) {
+        responseObj.content = '[未收到有效响应，请检查 API 地址、Key、模型是否正确]';
+      }
+      if (currentSessionId === targetSessionId) updateTreeBranch(layerIndex, branchIndex, responseObj.content);
+    }
+  } catch (err) {
+    if (err.name === 'AbortError') {
+      responseObj.content += '\n\n[已停止]';
+    } else {
+      responseObj.content += (responseObj.content ? '\n\n' : '') + '[错误: ' + err.message + ']';
+    }
+    if (currentSessionId === targetSessionId) updateTreeBranch(layerIndex, branchIndex, responseObj.content);
+  }
+}
+
+// ========== 导出预览弹窗 ==========
+function openExportModal(summary, tags, pathText, sessionTitle) {
+  const now = new Date().toISOString().split('T')[0];
+  document.getElementById('exportSummary').value = summary;
+  document.getElementById('exportCreated').value = now;
+  document.getElementById('exportUpdated').value = now;
+  document.getElementById('exportTags').value = tags.join(', ');
+  document.getElementById('exportFilename').value = `${sessionTitle || '总结'}.md`;
+  document.getElementById('exportPathText').value = pathText;
+
+  document.getElementById('exportLoading').classList.add('hidden');
+  document.getElementById('exportContent').classList.remove('hidden');
+  document.getElementById('exportModal').classList.remove('hidden');
+}
+
+function closeExportModal() {
+  document.getElementById('exportModal').classList.add('hidden');
+  exportData = null;
+}
+
+function confirmExport() {
+  if (!exportData) return;
+  const summary = document.getElementById('exportSummary').value.trim();
+  const created = document.getElementById('exportCreated').value;
+  const updated = document.getElementById('exportUpdated').value;
+  const tagsRaw = document.getElementById('exportTags').value;
+  const filename = document.getElementById('exportFilename').value.trim() || '总结.md';
+  const pathText = document.getElementById('exportPathText').value;
+
+  const tags = tagsRaw.split(/[,，]/).map(t => t.trim()).filter(t => t.length > 0);
+  const tagsYaml = tags.length > 0 ? tags.map(t => `  - ${t}`).join('\n') : '  - 未分类';
+
+  const md = `---
+创建时间: ${created || new Date().toISOString().split('T')[0]}
+更新时间: ${updated || new Date().toISOString().split('T')[0]}
+tags:
+${tagsYaml}
+---
+## 回答
+
+${summary}
+
+---
+## 关联
+
+${pathText}`;
+
+  const blob = new Blob([md], { type: 'text/markdown;charset=utf-8' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = filename.endsWith('.md') ? filename : filename + '.md';
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+
+  closeExportModal();
+}
+
+// ========== 一键总结导出 ==========
+async function summarizeAndExport() {
+  const session = sessions.find(s => s.id === currentSessionId);
+  if (!session || session.mode !== 'tree') return;
+
+  const completedLayers = session.layers.filter(l => l.selectedResponseId);
+  if (completedLayers.length === 0) {
+    alert('请先完成至少一层的对话并选择回答');
+    return;
+  }
+
+  if (!settings.apiUrl || !settings.apiKey || !settings.model) {
+    toggleSettings();
+    return alert('请先配置 API 地址、Key 和模型');
+  }
+
+  const sendBtn = document.getElementById('sendBtn');
+  sendBtn.disabled = true;
+
+  // 构建路径文本
+  let pathText = `问题：${session.messages[0].content}\n\n`;
+  for (const layer of session.layers) {
+    if (!layer.selectedResponseId) break;
+    const resp = layer.responses.find(r => r.id === layer.selectedResponseId);
+    pathText += `【${layer.label}】\n${resp ? resp.content : ''}\n\n`;
+  }
+
+  // 先打开弹窗显示 loading
+  document.getElementById('exportModal').classList.remove('hidden');
+  document.getElementById('exportLoading').classList.remove('hidden');
+  document.getElementById('exportContent').classList.add('hidden');
+
+  const summaryPrompt = `你是一位知识整理专家。请对以下多层专家对话进行精炼总结。
+
+要求：
+1. 保留核心观点和关键论据
+2. 按逻辑结构组织（使用小标题）
+3. 语言简洁但信息密度高
+4. 不要遗漏任何一层的重要观点
+
+同时请为这篇总结生成3-5个中文tags，用于知识库分类。
+
+请严格按以下JSON格式输出（不要输出markdown代码块标记或其他说明文字）：
+{"summary":"总结内容（支持换行，使用\\n）","tags":["tag1","tag2","tag3"]}
+
+对话内容：
+${pathText}`;
+
+  try {
+    const res = await fetch(settings.apiUrl, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': 'Bearer ' + settings.apiKey
+      },
+      body: JSON.stringify({
+        model: settings.model,
+        messages: [{ role: 'user', content: summaryPrompt }],
+        stream: false
+      })
+    });
+
+    if (!res.ok) {
+      let errText = '';
+      try { errText = await res.text(); } catch (e) { errText = '无法读取错误响应'; }
+      throw new Error(`HTTP ${res.status}: ${errText}`);
+    }
+
+    const data = await res.json();
+    const raw = data.choices?.[0]?.message?.content || '';
+
+    let summary = raw;
+    let tags = [];
+    try {
+      const jsonMatch = raw.match(/```json\s*([\s\S]*?)```/) || raw.match(/```\s*([\s\S]*?)```/) || [null, raw];
+      const parsed = JSON.parse(jsonMatch[1].trim());
+      summary = parsed.summary || raw;
+      tags = parsed.tags || [];
+    } catch (e) {
+      summary = raw;
+    }
+
+    exportData = { summary, tags, pathText, sessionTitle: session.title || '总结' };
+    openExportModal(summary, tags, pathText, session.title);
+  } catch (err) {
+    closeExportModal();
+    alert('总结失败: ' + err.message);
+  } finally {
+    sendBtn.disabled = false;
+  }
+}
+
+// ========== 启动 ==========
+init();
+updateModelBadge();
+</script>
+</body>
+</html>
